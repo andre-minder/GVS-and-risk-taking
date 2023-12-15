@@ -1,5 +1,6 @@
 # GVS and risk-taking - A replication of De Maio et al., 2021
 
+This repository provides the scripts we will use for a close replication of the study "Galvanic Vestibular Stimulation influences risk-taking behaviour" by the De Maio et al. (2021). 
 All scripts are provided as R Markdown and HTML files to ensure transparency, reproducibility, and easy understanding of the code. 
 The following scripts are part of this repository:
 
