@@ -1,0 +1,355 @@
+---
+title: "B2_Processing"
+author: "André Minder"
+date: "2023-11-14"
+output:
+  html_document:
+    code_folding: hide
+    highlight: haddock
+    theme: flatly
+    toc: yes
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE,
+                      warning = FALSE)
+```
+
+# What does this script do?
+
+This script prepares the raw data files for the later analyses (see script *C_Analyses*). Note that the acquired data is stored according to BIDS (Brain Imaging Data Structure: https://bids.neuroimaging.io/) standards to facilitate the processing and analysis of the data by other researchers.
+
+This script includes the following steps:
+
+- Reading in the condition table (information about how the stimulation blocks are distributed across sessions and participants)
+- Reading in the single .tsv files of each experimental block and combining them to data frames (i.e. condition table, demographics, BART data, GDT data)
+- Extracting the variables needed for the later analyses by wrangling and tidying the data
+- Applying the prespecified exclusion criteria and marking participants/trials accordingly
+- Calculate important scores for the BART (exploded balloons, adjusted average pumps) and the GDT (number of choices, net score)
+- Merging all the data frames into data frames for the analyses
+- Apply master exclusion criteria for the later analyses
+
+
+# Dependencies
+
+```{r dependencies}
+
+# just some packages to facilited the data wrangling/tidying
+library(tidyverse)
+library(purrr)
+library(janitor)
+
+```
+
+# Condition table
+
+In this section, the created condition table (see *A_Counterbalancing*) is read in. It will be used later on to connect the session number with the received stimulation. Note that the table is split in accordance with the two experiments in order to facilitate the merging with the respective behavior data tables.
+
+## Read in condition table
+```{r}
+
+# read in the full condition table
+condition_table <- read_csv("conditions/conditions_table.csv")
+
+```
+
+## Data wrangling
+```{r data wrangling conditon table}
+
+# select only the sessions for the BART and transform the data frame into long format (this will facilitate the joining of the different data frames later on)
+condition_table_BART <- condition_table |> 
+  select("subject", starts_with("BART")) |> 
+  rename("01" = BART_session_1, "02" = BART_session_2, "03" = BART_session_3) |> 
+  pivot_longer(cols = -subject, names_to = "session", values_to = "stimulation")
+
+# select only the sessions for the GDT and transform the data frame into long format (this will facilitate the joining of the different data frames later on)
+condition_table_GDT <- condition_table |> 
+  select("subject", starts_with("GDT")) |> 
+  rename("01" = GDT_session_1, "02" = GDT_session_2, "03" = GDT_session_3) |>
+  pivot_longer(cols = -subject, names_to = "session", values_to = "stimulation")
+
+```
+
+
+# Demographic data
+
+The following section reads in the demographics data and extracts the important variables (subject number, age and gender). The tidy demographics data will be joined with the behavioral data tables later on.
+
+## Reading in demographic data
+
+```{r load demographics}
+
+# reading in the single demographics files from each participant
+demo_files <- list.files(path = "data_test/", recursive = TRUE, pattern = "*demographics*")
+
+# while reading in: transform values of the variable frameRate into a characters, because it might not be an integer due to frame drops and block the merging of the tables
+demographics_raw <- map_dfr(.x = set_names(paste0("data_test/", demo_files)),
+                            .f = ~ read_tsv(.x, col_types = cols(.default = "?", frameRate = "c")))
+
+```
+
+
+## Data wrangling (demographic data)
+
+```{r}
+
+# Select variables age and gender. Filter out empty rows created by PsychoPy at the start and the end of the experiment.
+demographics_clean <- demographics_raw |> 
+  clean_names() |> 
+  select(subject = participant, 
+         age = text_age_input_text, 
+         gender = slider_gender_response) |> 
+  filter(!is.na(gender))
+
+```
+
+
+# BART data
+
+This section contains several important processing steps:
+- Reading in the BART data 
+- Extract the relevant variables (subject number, session number, number of pumps, earnings, and if the balloon popped)
+- Join the data table with the condition table for the experiment to get the stimulation block information
+- Apply the exclusion criteria and mark participants accordingly (see the section on applying the exclusion criteria for further information)
+- Also get the number of valid trials (see exclusion criteria section)
+- Calculate the proportion of exploded balloons for each stimulation condition and for each participant
+- Calculate the adjusted average pumps for each stimulation condition and each participant
+- Merge the relevant tables to unite all the important information about the BART data for the analysis
+
+## Reading in BART data
+
+```{r}
+
+# reading in the .tsv files from each block/session (three per participant) from each participant
+BART_files <- list.files(path = "data_test/", recursive = TRUE, pattern = "*balloonanalogrisktask*")
+
+# while reading in: again taking care of the frameRate variable (see demographics section)
+BART_raw <- map_dfr(.x = set_names(paste0("data_test/", BART_files)),
+                            .f = ~ read_tsv(.x, col_types = cols(.default = "?", frameRate = "c")))
+```
+
+
+## Data wrangling (BART)
+
+```{r}
+
+# Select variables subject, session, n_pumps, popped, and earnings. Filter out empty rows created by PsychoPy at the start and the end of the experimental block. Join it with the conditions table.
+BART_clean_with_conditions <- BART_raw |> 
+  clean_names() |> 
+  select(subject = participant, session, n_pumps, popped, earnings) |> 
+  filter(!is.na(n_pumps)) |> 
+  left_join(condition_table_BART, by = c("subject", "session"))
+
+```
+
+
+## Apply exclusion criteria (BART)
+
+The following section marks participants and trials which need to be excluded from the analyses in accordance with the specified exclusion criteria in the replication report. The follow criteria are applied:
+
+- **valid_trial**: Similar to the original study, trials in which the money was collected without pumping or after the first pump were excluded.
+
+- **fast_answer_exclusion_subject**: To ensure good data quality, non-compliant participants will be excluded from the analysis. We defined non-compliance as collecting money without pumping or after one pump in more than 10% of the trials in any of the conditions.
+
+- **complete_BART_data**: Exclude participants who did not complete all BART stimulation blocks (either due to side-effects, pain, or other reasons). This ensures that only complete data enters the analysis later on.
+
+```{r}
+
+# marking exclusions on the trial level (first criterion)
+BART_clean_with_conditions_and_exclusions_trials <- BART_clean_with_conditions |> 
+  mutate(valid_trial = ifelse((popped == FALSE & n_pumps <= 1), FALSE, TRUE))
+
+# marking exclusions due to invalid trials on the subject level (second criterion). Exclude participants with less than 27 valid trials from the analysis.
+BART_clean_with_conditions_and_exclusions_subject_valid <- BART_clean_with_conditions_and_exclusions_trials |> 
+  group_by(subject, session, stimulation) |>
+  summarize(n_valid_trials_BART = sum(valid_trial, na.rm = TRUE)) |> 
+  mutate(fast_answer_exclusion_subject = ifelse(n_valid_trials_BART < 27, "exclude", "include"))
+
+# Check if participants have data for all stimulation blocks (third criterion)
+BART_clean_with_conditions_and_exclusions_subject_complete <- BART_clean_with_conditions_and_exclusions_subject_valid |> 
+  group_by(subject) |> 
+  count(stimulation) |> 
+  pivot_wider(names_from = "stimulation", values_from = n) |> 
+  mutate(complete_BART_data = case_when(is.na(`L-GVS`) ~ "exclude",
+                                        is.na(`R-GVS`) ~ "exclude",
+                                        is.na(SHAM) ~ "exclude",
+                                        TRUE ~ "include")) |> 
+  select("subject", "complete_BART_data")
+
+# Join the two subject level dfs
+BART_clean_with_conditions_and_exclusions_subject <-
+full_join(BART_clean_with_conditions_and_exclusions_subject_valid,
+          BART_clean_with_conditions_and_exclusions_subject_complete, by = "subject")
+
+```
+
+
+## Proportion of exploded balloons (BART)
+
+This section calculates the proportion of exploded balloons for each stimulation condition and for each participant.
+
+```{r}
+
+BART_proportion_exploded_balloons <- BART_clean_with_conditions_and_exclusions_trials |> 
+  group_by(subject, stimulation) |> 
+  summarize(proportion_exploded_balloons = mean(popped))
+
+```
+
+
+## Calculate adjusted average pumps (BART)
+
+The variable *adjusted average pumps* is defined as the average number of pumps of all unpopped balloons. The adjusted average number of pumps is calculated for all valid trials for each stimulation block and each participant.
+
+```{r}
+
+BART_scored <- BART_clean_with_conditions_and_exclusions_trials |> 
+  filter(popped == FALSE) |>
+  filter(valid_trial == TRUE) |>
+  group_by(subject, stimulation) |> 
+  summarize(adjusted_mean_pumps = mean(n_pumps))
+
+```
+
+
+## Merge data (BART)
+
+Merge all important BART dfs with the demographics data and rename/reorder some variables for clarity. Also introduce a master exclusion criterion that consists of all possible exclusion criteria (i.e. if a participant falls under one exclusion criterion, the master exclusion criterion will also indicate exclusion). This is just introduced to facilitate the exclusion of participants in the analyses file.
+
+```{r}
+
+# Merge tables; also rearrange the columns a bit and rename some variables for clarity
+BART_all <- full_join(demographics_clean, BART_scored, by = "subject") |>
+  full_join(BART_proportion_exploded_balloons, by = c("subject", "stimulation")) |> 
+  full_join(BART_clean_with_conditions_and_exclusions_subject, by = c("subject", "stimulation")) |> 
+  select("subject", "session", "stimulation", everything()) |> 
+  arrange(subject, session) |> 
+  rename(session_BART = session,
+         stimulation_BART = stimulation) |> 
+  mutate(BART_master_exclusions = case_when(fast_answer_exclusion_subject == "exclude" ~ "exclude",
+                                            complete_BART_data == "exclude" ~ "exclude",
+                                            TRUE ~ "include"))
+
+```
+
+
+# GDT data
+
+This section also contains several important processing steps:
+- Reading in the GDT data 
+- Extract the relevant variables (subject number, session number, gain, and combination choice)
+- Join the data table with the condition table for the experiment to get the stimulation block information
+- Apply the exclusion criteria and mark participants accordingly (see the section on applying the exclusion criteria for further information)
+- Get the number of risky/safe choices for each stimulation block and each participant
+- Calculate the net score
+- Merge all important GDT data frames together and add the demographical data
+
+
+## Reading in GDT data
+
+```{r}
+
+# same as above
+GDT_files <- list.files(path = "data_test/", recursive = TRUE, pattern = "*gameofdicetask_run*")
+
+GDT_raw <- map_dfr(.x = set_names(paste0("data_test/", GDT_files)),
+                   .f = ~ read_tsv(.x, col_types = cols(.default = "?", frameRate = "c")))
+
+```
+
+## Data wrangling (GDT)
+
+Tidy the data and extract the important behavioral variables (choices, gains). Also join the table with the conditions table.
+
+```{r}
+
+GDT_clean_with_conditions <- GDT_raw |> 
+  clean_names() |> 
+  filter(!is.na(d_number)) |> 
+  select(subject = participant, session, gain, choice) |> 
+  mutate(choice = recode(choice, `4` = "safest", `3` = "safe", 
+                         `2` = "risky", `1` = "riskiest")) |> 
+  left_join(condition_table_GDT, by = c("subject", "session")) |> 
+  select("subject", "session", "stimulation", everything())
+
+```
+
+
+## Apply exclusion criteria (GDT)
+
+For the GDT only one exclusion criterion has been specified. As with the BART, only participants with complete data are allowed to enter the analysis. Again, this criterion is in place to exclude participants who had to terminate the session due to stronger stimulation side-effects.
+
+```{r}
+
+# Check if participants have data for all stimulation blocks 
+GDT_clean_with_conditions_subject_valid <- GDT_clean_with_conditions |> 
+  group_by(subject) |> 
+  count(stimulation) |> 
+  pivot_wider(names_from = "stimulation", values_from = n) |> 
+  mutate(complete_GDT_data = case_when(is.na(`L-GVS`) ~ "exclude",
+                                        is.na(`R-GVS`) ~ "exclude",
+                                        is.na(SHAM) ~ "exclude",
+                                        TRUE ~ "include")) |> 
+  select("subject", "complete_GDT_data")
+
+```
+
+
+## Number of choices and net score (GDT)
+
+In this section, the number of safe/risky choices per stimulation block and participant is calculated. The additional net score of the GDT is calculated in the following way: Sum of save choices (i.e. safest plus safe option) - sum of risky choices (i.e. risky plus riskiest option). A positive score thus hints at a safe player, while a negative score indicates risky playing.
+
+```{r}
+
+GDT_scored <- GDT_clean_with_conditions |> 
+  group_by(subject, stimulation, session, .drop = FALSE) |> 
+  count(choice) |> 
+  pivot_wider(names_from = "choice", values_from = n) |> 
+  select(c("subject", "stimulation", "safest", "safe", "risky", "riskiest")) |> 
+  rowwise() |> 
+  mutate(score = sum(safest, safe, na.rm = TRUE) - sum(risky, riskiest, na.rm = TRUE)) |> 
+  select("subject", "session", "stimulation", everything())
+
+```
+
+
+## Merge data (GDT)
+
+```{r}
+
+# merge all important data
+GDT_all <- full_join(demographics_clean, GDT_scored, by = "subject") |>
+  full_join(GDT_clean_with_conditions_subject_valid, by = "subject") |> 
+  arrange(subject, session) |> 
+  rename(session_GDT = session,
+         stimulation_GDT = stimulation) |> 
+  mutate(complete_GDT_data = case_when(is.na(complete_GDT_data) ~ "exclude",
+                                       TRUE ~ "include"),
+         GDT_master_exclusions = case_when(complete_GDT_data == "exclude" ~ "exclude",
+                                           TRUE ~ "include"))
+
+```
+
+
+# Save the files
+
+```{r}
+
+# in case this dir doesn't exist, create it
+dir.create("data/processed/")
+
+# save data to disk in that dir
+write_csv(BART_all, file = "data/processed/BART_data_processed.csv")
+write_csv(GDT_all, file = "data/processed/GDT_data_processed.csv")
+
+```
+
+
+# Session info
+
+```{r}
+
+sessionInfo()
+
+```

@@ -1,0 +1,52 @@
+---
+title: "B1_Processing"
+author: "André Minder"
+date: "2023-11-14"
+output:
+  html_document:
+    code_folding: hide
+    highlight: haddock
+    theme: flatly
+    toc: yes
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE,
+                      warning = FALSE)
+```
+
+# What does this script do?
+
+This script simply quickly converts the raw .csv files from PsychoPy into .tsv files. This is done so data can be easily stored according to BIDS standards (Brain Imaging Data Structure: https://bids.neuroimaging.io/).
+
+```{r dependencies}
+
+library(tidyverse)
+
+```
+
+This section converts the .csv files into .tsv files and saves them in the same folder.
+```{r, results='hide'}
+
+# get the list of files in the raw data folder
+file_list <- list.files(path = "raw/", pattern = "*.csv", full.names = TRUE)
+
+
+# function that converts the csv files into real tsv files  
+convert_csv_to_tsv <- function(file) {
+  data <- as.data.frame(read_delim(file, delim = "\t"))
+  filename <- tools::file_path_sans_ext(file)
+  write.table(data, file = paste0(filename, ".tsv"), sep = "\t", row.names = FALSE)
+}
+  
+lapply(file_list, convert_csv_to_tsv)
+```
+
+# Session info
+
+```{r}
+
+sessionInfo()
+
+```

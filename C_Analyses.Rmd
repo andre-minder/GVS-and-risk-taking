@@ -1,0 +1,261 @@
+---
+title: "C_Analyses"
+date: "2023-10-28"
+author: "André Minder"
+output:
+  html_document:
+    code_folding: hide
+    highlight: haddock
+    theme: flatly
+    toc: yes
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE,
+                      warning = FALSE)
+```
+
+# Information about this script
+
+This script contains all preregistered analyses for this project. Note that the raw data was processed in another script (see *B2_processing*). The script includes the following analyses:
+
+- Descriptive statistics of the demographics (gender and age)
+- Descriptive statistics of the BART data (exploded balloons per stimulation block, adjusted average pumps)
+- Descriptive statistics of the GDT data (number of choices per stimulation block, net score)
+- Paired t-test for the generic vestibular effect in the BART experiment
+- Paired t-test for the specific vestibular effect in the BART experiment
+- Equivalence test for the specific vestibular effect (TOST procedure; Lakens, 2017, 2018)
+- Wilcoxon signed-rank test for the generic vestibular effect in the GDT experiment
+- Wilcoxon signed-rank test for the specific vestibular effect in the GDT experiment
+
+# Dependencies
+
+```{r dependencies}
+
+library(tidyverse)    # data wrangling
+library(janitor)      # for the rounding function round_half_up()
+library(easystats)    # easy report of statistics
+library(TOSTER)       # for the TOST equivalence testing
+library(kableExtra)   # just for printing a nice table in the HTML file
+library(effsize)      # used for calculating the critical effect size (see equivalence test)
+
+```
+
+
+# Reading in the data
+
+```{r load}
+
+# reading in the processed data form the B2_processing script
+BART_data_processed <- read_csv("processed/BART_data_processed.csv")
+GDT_data_processed <- read_csv("processed/GDT_data_processed.csv")
+
+```
+
+# Exclusions
+
+This section excludes participants marked as "excluded" in the processing file (see B2_processing) from the analyses in both data files.
+
+```{r}
+
+# apply the master exclusion to the BART data
+BART_data_processed_after_exclusion <- BART_data_processed |> 
+  filter(BART_master_exclusions == "include")
+
+# apply the master exclusion to the GDT data
+GDT_data_processed_after_exclusion <- GDT_data_processed |> 
+  filter(GDT_master_exclusions == "include")
+  
+
+```
+
+
+# Descriptive Statistics
+
+## Demographics
+
+In this section, the descriptive statistics for the relevant gender variables are extracted.
+
+```{r demographics descriptives}
+
+# Get the descriptive statistics for age and print them in a nice table
+BART_data_processed_after_exclusion |>
+  mutate(age = as.numeric(age)) |>
+  distinct(subject, .keep_all = TRUE) |> 
+  summarise(Mean = mean(age, na.rm = TRUE),
+            SD = sd(age, na.rm = TRUE)) |>
+  mutate_all(.funs = janitor::round_half_up, digits = 1) |>
+  kable() |>
+  add_header_above(header = c("Age" = 2)) |>
+  kable_classic(full_width = FALSE)
+
+# Get the descriptives for gender and also print them in a nice table
+BART_data_processed_after_exclusion |> 
+  rename(Gender = gender) |>
+  distinct(subject, .keep_all = TRUE) |> 
+  group_by(Gender) |> 
+  summarise(n = n()) |> 
+  mutate(Percent = paste0(round_half_up((n / sum(n)) * 100, 1), "%")) |>
+  mutate(Gender = stringr::str_to_sentence(Gender)) |> 
+  kable() |>
+  kable_classic(full_width = FALSE)
+
+
+```
+
+## BART
+
+This section contains generates the descriptive statistics of the BART data. The important variables that are extracted here are the proportion of exploded balloon in each condition as well as the adjusted average pumps for each condition. Additionally, the generic vestibular condition/effect is created in this section (defined as L-GVS + R-GVS / 2).
+
+```{r BART descriptives}
+
+# extracting the mean proportion of exploded balloons for each stimulation and print it in a nice table
+BART_data_processed_after_exclusion |> 
+  group_by(stimulation_BART) |> 
+  summarize(proportion_exploded_balloons_mean = round_half_up(mean(proportion_exploded_balloons, na.rm = TRUE), 2),
+            proportion_exploded_balloons_sd = round_half_up(sd(proportion_exploded_balloons, na.rm = TRUE), 2)) |> 
+  kable() |> 
+  kable_classic(full_width = FALSE)
+  
+# A bit of data wrangling to get the generic vestibular effect (L-GVS + R-GVS / 2)
+BART_data_processed_generic_effect <- BART_data_processed_after_exclusion |> 
+  select("subject", "stimulation_BART", "adjusted_mean_pumps") |> 
+  pivot_wider(names_from = "stimulation_BART", values_from = "adjusted_mean_pumps") |> 
+  rowwise() |> 
+  mutate(generic_effect = sum(`L-GVS`, `R-GVS`, na.rm = TRUE) / 2) |> 
+  pivot_longer(cols = -subject, names_to = "stimulation_BART", values_to = "adjusted_mean_pumps")
+
+# Get the descriptive statistics for the stimulation effects in a nicely printed table
+BART_data_processed_generic_effect |> 
+  group_by(stimulation_BART) |> 
+  summarise(Mean = round_half_up(mean(adjusted_mean_pumps), 2),
+            SD = round_half_up(sd(adjusted_mean_pumps), 2)) |>
+  kable() |>
+  kable_classic(full_width = FALSE)
+
+```
+
+
+## GDT
+
+In this section, the descriptive statistics for the GDT are calculated. This includes the number of safe/risky choice for each stimulation condition as well as the net score for each stimulation condition. As above, the generic stimulation condition/effect is created in this section too.
+
+```{r}
+
+# Generate a table with the choices per stimulation block
+GDT_data_processed_after_exclusion |> 
+  select("subject", "stimulation_GDT", "safest", "safe", "risky", "riskiest") |> 
+  pivot_longer(cols = safest:riskiest, names_to = "choice", values_to = "n") |> 
+  group_by(stimulation_GDT, choice) |> 
+  summarise(N = sum(n, na.rm = TRUE)) |> 
+  pivot_wider(names_from = "choice", values_from = "N") |> 
+  kable() |>
+  kable_classic(full_width = FALSE)
+
+# A bit of data wrangling to get the generic vestibular effect (L-GVS + R-GVS / 2) for the GDT
+GDT_data_processed_generic_effect <- GDT_data_processed_after_exclusion |> 
+  select("subject", "stimulation_GDT", "score") |> 
+  pivot_wider(names_from = "stimulation_GDT", values_from = "score") |> 
+  rowwise() |> 
+  mutate(generic_effect = sum(`L-GVS`, `R-GVS`, na.rm = TRUE) / 2) |> 
+  pivot_longer(cols = -subject, names_to = "stimulation_GDT", values_to = "score")
+
+# Get the descriptive stats for the stimulation effects in a nicely printed table
+GDT_data_processed_generic_effect |> 
+  group_by(stimulation_GDT) |> 
+  summarise(Median = round_half_up(median(score), 2),
+            MAD = round_half_up(mad(score), 2)) |>
+  kable() |>
+  kable_classic(full_width = FALSE)
+
+```
+
+
+# Statistical inference
+
+## BART 
+
+### T-test BART (generic vestibular effect)
+
+This section contains the t-test for the generic vestibular effect and prints out the detailed results.
+
+```{r}
+# A bit of data wrangling 
+BART_data_processed_generic_effect_test <- BART_data_processed_generic_effect |> 
+  filter(stimulation_BART != c("L-GVS", "R-GVS")) 
+
+t.test(adjusted_mean_pumps ~ stimulation_BART, data = BART_data_processed_generic_effect_test,
+       paired = TRUE, alternative = "two.sided") |> 
+  report()
+
+```
+
+
+### T-test BART (specific vestibular effect)
+
+This section contains the t-test for the specific vestibular effect and prints out the detailed results.
+
+```{r}
+# A bit of data wrangling to exclude the SHAM condition
+BART_data_processed_specific_effect_test <- BART_data_processed_after_exclusion |> 
+  filter(stimulation_BART != "SHAM")
+
+t.test(adjusted_mean_pumps ~ stimulation_BART, data = BART_data_processed_specific_effect_test,
+       paired = TRUE, alternative = "two.sided") |> 
+report()
+
+```
+
+### Testing the specific vestibular effect for equivalence 
+
+This section contains the equivalence test for the specific vestibular effect. THE SESOI is set according to the smallest statistically detectable effect size of the original study (critical effect size; Lakens, 2018). While this kind of test does not directly confirm the absence of a meaningful effect, it allows us to reject effect sizes as larger or larger than the critical effect size, thus leading to the conclusion that the effect detected by the original study cannot be as huge as proclaimed.
+
+```{r}
+# get the critical t value of the original study
+critical_t <- qt(p = .975, df = 19, lower.tail = TRUE)
+
+# calculate the critical effect size (the effect size that would have just been significant in the original study)
+critical_d <- t_to_d(critical_t, df = 19, paired = TRUE, alternative = "two.sided")
+  
+t_TOST(
+  adjusted_mean_pumps ~ stimulation_BART,
+  data = BART_data_processed_specific_effect_test,
+  hypothesis = "EQU",
+  paired = TRUE,
+  eqb = critical_d$d,
+  eqbound_type = "SMD",
+  alpha = 0.05,
+)
+```
+
+## GDT
+
+### Wilcoxon signed-rank test for the GDT score (generic vestibular effect)
+
+This section performs the Wilcoxon test for paired data for the generic vestibular effect in the GDT.
+```{r}
+# get rid of the conditions L-GVS and R-GVS
+GDT_data_processed_generic_effect_test <- GDT_data_processed_generic_effect |> 
+  filter(stimulation_GDT != c("L-GVS", "R-GVS")) 
+
+# perform the test
+wilcox.test(score ~ stimulation_GDT, data = GDT_data_processed_generic_effect_test, paired = TRUE,
+       alternative = "two.sided")
+
+```
+
+
+### Wilcoxon signed-rank test for the GDT score (specific vestibular effect)
+
+This section performs the Wilcoxon test for paired data for the specific vestibular effect in the GDT.
+```{r}
+
+GDT_data_processed_specific_effect_test <- GDT_data_processed_after_exclusion |> 
+  filter(stimulation_GDT != "SHAM") 
+
+wilcox.test(score ~ stimulation_GDT, data = GDT_data_processed_specific_effect_test, paired = TRUE,
+       alternative = "two.sided")
+
+```
+

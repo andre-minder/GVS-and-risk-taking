@@ -1,0 +1,8 @@
+subject,age,gender,session_GDT,stimulation_GDT,safest,safe,risky,riskiest,score,complete_GDT_data,GDT_master_exclusions
+01,23,Männlich,01,SHAM,7,5,3,3,6,include,include
+01,23,Männlich,02,R-GVS,11,5,NA,2,14,include,include
+01,23,Männlich,03,L-GVS,16,2,NA,NA,18,include,include
+02,21,Weiblich,01,SHAM,14,4,NA,NA,18,include,include
+02,21,Weiblich,02,R-GVS,12,3,3,NA,12,include,include
+02,21,Weiblich,03,L-GVS,10,6,1,1,14,include,include
+03,21,Weiblich,NA,NA,NA,NA,NA,NA,NA,exclude,exclude

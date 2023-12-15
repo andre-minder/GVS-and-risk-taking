@@ -1,0 +1,8 @@
+subject,session_BART,stimulation_BART,age,gender,adjusted_mean_pumps,proportion_exploded_balloons,n_valid_trials_BART,fast_answer_exclusion_subject,complete_BART_data,BART_master_exclusions
+01,01,L-GVS,23,Männlich,20.875,0.2,30,include,include,include
+01,02,R-GVS,23,Männlich,21.347826086956523,0.16666666666666666,28,include,include,include
+01,03,SHAM,23,Männlich,20.958333333333332,0.2,30,include,include,include
+02,01,L-GVS,21,Weiblich,26.363636363636363,0.26666666666666666,30,include,include,include
+02,02,SHAM,21,Weiblich,26.083333333333332,0.2,30,include,include,include
+02,03,R-GVS,21,Weiblich,28.708333333333332,0.2,30,include,include,include
+03,01,R-GVS,21,Weiblich,14.25,0,12,exclude,exclude,exclude
