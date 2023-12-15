@@ -16,3 +16,7 @@ The current folders contain the following information/files:
 - **data_test**: This folder contains the dummy data stored according to BIDS standards (note that the required .json files are still missing, but will be added with the real data).
 - **processed**: This folder contains the processed .csv files for both experiments from the *B2_Processing* script.
 - **raw**: This folder contains the raw data created by PsychoPy. The script *B1_Processing* converts these .csv files to .tsv files in the same folder. The converted files can then be stored in the data folder according to BIDS standards.
+
+Important links:
+- OSF: osf.io/p3brd 
+- Original study: https://doi.org/10.1016/j.neuropsychologia.2021.107965
