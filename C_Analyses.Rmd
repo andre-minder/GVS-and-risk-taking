@@ -16,18 +16,23 @@ knitr::opts_chunk$set(message = FALSE,
                       warning = FALSE)
 ```
 
+
 # Information about this script
 
 This script contains all preregistered analyses for this project. Note that the raw data was processed in another script (see *B2_processing*). The script includes the following analyses:
 
 - Descriptive statistics of the demographics (gender and age)
 - Descriptive statistics of the BART data (exploded balloons per stimulation block, adjusted average pumps)
+- Plotting the polarity-specific vestibular effect for the BART
 - Descriptive statistics of the GDT data (number of choices per stimulation block, net score)
+- Plotting the polarity-specific vestibular effect for the GDT
 - Paired t-test for the generic vestibular effect in the BART experiment
 - Paired t-test for the specific vestibular effect in the BART experiment
 - Equivalence test for the specific vestibular effect (TOST procedure; Lakens, 2017, 2018)
+- Exploratory statistics for the BART (Non-parametric test, ANOVA, unpaired t-test)
 - Wilcoxon signed-rank test for the generic vestibular effect in the GDT experiment
 - Wilcoxon signed-rank test for the specific vestibular effect in the GDT experiment
+
 
 # Dependencies
 
@@ -39,6 +44,12 @@ library(easystats)    # easy report of statistics
 library(TOSTER)       # for the TOST equivalence testing
 library(kableExtra)   # just for printing a nice table in the HTML file
 library(effsize)      # used for calculating the critical effect size (see equivalence test)
+library(ggpubr)       # for plotting
+library(rcompanion)   # get the effect size r for the Wilcoxon signed-rank test
+library(mvnormalTest) # test for univariate/multivariate normality
+library(car)          # test for homoscedasticity
+library(rstatix)      # For ANOVA
+library(viridis)      # Color palette for plots
 
 ```
 
@@ -53,6 +64,7 @@ GDT_data_processed <- read_csv("processed/GDT_data_processed.csv")
 
 ```
 
+
 # Exclusions
 
 This section excludes participants marked as "excluded" in the processing file (see B2_processing) from the analyses in both data files.
@@ -62,12 +74,12 @@ This section excludes participants marked as "excluded" in the processing file (
 # apply the master exclusion to the BART data
 BART_data_processed_after_exclusion <- BART_data_processed |> 
   filter(BART_master_exclusions == "include")
+  
 
 # apply the master exclusion to the GDT data
 GDT_data_processed_after_exclusion <- GDT_data_processed |> 
   filter(GDT_master_exclusions == "include")
   
-
 ```
 
 
@@ -78,6 +90,11 @@ GDT_data_processed_after_exclusion <- GDT_data_processed |>
 In this section, the descriptive statistics for the relevant gender variables are extracted.
 
 ```{r demographics descriptives}
+
+# check if there are excluded participants
+BART_data_processed |> 
+  filter(BART_master_exclusions = FALSE)
+
 
 # Get the descriptive statistics for age and print them in a nice table
 BART_data_processed_after_exclusion |>
@@ -104,11 +121,20 @@ BART_data_processed_after_exclusion |>
 
 ```
 
+
 ## BART
 
 This section contains generates the descriptive statistics of the BART data. The important variables that are extracted here are the proportion of exploded balloon in each condition as well as the adjusted average pumps for each condition. Additionally, the generic vestibular condition/effect is created in this section (defined as L-GVS + R-GVS / 2).
 
+### Tables
 ```{r BART descriptives}
+
+# get the proportion of valid trials
+
+BART_data_processed_after_exclusion |> 
+  summarize(valid_trials = round_half_up((1 - (sum(n_valid_trials_BART) / (30*37*3)))*100, 2)) |>
+  kable() |> 
+  kable_classic(full_width = FALSE)
 
 # extracting the mean proportion of exploded balloons for each stimulation and print it in a nice table
 BART_data_processed_after_exclusion |> 
@@ -117,7 +143,7 @@ BART_data_processed_after_exclusion |>
             proportion_exploded_balloons_sd = round_half_up(sd(proportion_exploded_balloons, na.rm = TRUE), 2)) |> 
   kable() |> 
   kable_classic(full_width = FALSE)
-  
+
 # A bit of data wrangling to get the generic vestibular effect (L-GVS + R-GVS / 2)
 BART_data_processed_generic_effect <- BART_data_processed_after_exclusion |> 
   select("subject", "stimulation_BART", "adjusted_mean_pumps") |> 
@@ -136,11 +162,73 @@ BART_data_processed_generic_effect |>
 
 ```
 
+This section generates a plot to visualize the polarity-specific vestibular effect.
+
+### Plots
+
+```{r}
+
+
+### Plot L-GVS vs. R-GVS (specific effect)
+
+# Calculate the number of positive/negative slopes for the specific effect
+n_slopes_BART_spec <- BART_data_processed_after_exclusion |>
+  select(subject, stimulation_BART, adjusted_mean_pumps) |> 
+  pivot_wider(names_from = "stimulation_BART", values_from = "adjusted_mean_pumps") |> 
+  mutate(slope_positive = ifelse((`R-GVS` - `L-GVS` > 0), TRUE, FALSE)) |> 
+  summarize(n = sum(slope_positive))
+
+# Plot the data
+plot_BART_spec <- BART_data_processed_generic_effect |> 
+  select(subject, stimulation_BART, adjusted_mean_pumps) |> 
+  filter(stimulation_BART %in% c("L-GVS", "R-GVS")) |> 
+  ggplot(aes(x = stimulation_BART, y = adjusted_mean_pumps, fill = stimulation_BART)) +
+  introdataviz::geom_split_violin(aes(group = stimulation_BART), alpha = .5) +
+  geom_boxplot(aes(group = stimulation_BART), width = .12, fatten = NULL, alpha = .6) +
+  geom_point(aes(colour = stimulation_BART), alpha = .6, 
+              position = position_nudge(x = c(.2, -.2))) +
+  geom_line(aes(group = subject), alpha = .2, linewidth = .5, 
+            position = position_nudge(x = c(.2, -.2))) +
+  stat_summary(fun = "mean", geom = "point") +
+  stat_summary(fun.data = "mean_se", geom = "errorbar", width = .1) +
+  annotate("text", x=1.5, y=67, size = 3, 
+           label = paste0("Positive Slopes / Negative Slopes: ", n_slopes_BART_spec, " / ",
+                          nrow(BART_data_processed_generic_effect)/4 - n_slopes_BART_spec)) +
+  coord_cartesian(ylim = c(0, 75), expand = FALSE) +
+  stat_summary(fun = "mean", geom = "point", size = 2, 
+               colour = "black", position = position_nudge(x = c(.2, -.2))) +
+  stat_summary(group = 1, fun = "mean", geom = "line", linewidth = 1.5, 
+               colour = "black", position = position_nudge(x = c(.2, -.2))) +
+  xlab("") +
+  ylab("Adjusted Mean Pumps") +
+  ggtitle("BART (Specific Effect)") +
+  theme_classic() +
+  theme(plot.title = element_text(size = 14, face = "bold", 
+                                  hjust = .5),
+        axis.ticks = element_line(colour = "black", size = 1),
+        axis.text = element_text(face = "bold", size = 10),
+        axis.title = element_text(face = "bold", size = 12),
+        legend.position = "none") +
+  scale_fill_viridis(discrete = TRUE, option = "E") +
+  scale_color_viridis(discrete = TRUE, option = "E")
+
+plot_BART_spec
+
+ggsave("PolaritySpec_eff_BART.png",
+       plot = plot_BART_spec,
+       units = "px",
+       width = 1063,
+       dpi = 300, 
+       path = "plots")
+
+```
+
 
 ## GDT
 
 In this section, the descriptive statistics for the GDT are calculated. This includes the number of safe/risky choice for each stimulation condition as well as the net score for each stimulation condition. As above, the generic stimulation condition/effect is created in this section too.
 
+### Tables
 ```{r}
 
 # Generate a table with the choices per stimulation block
@@ -172,6 +260,67 @@ GDT_data_processed_generic_effect |>
 ```
 
 
+### Plots
+
+This section generates the plot for the polarity-specific vestibular effect in the GDT.
+
+```{r}
+
+# Specific effect
+# Calculate the number of positive/negative slopes for the specific effect
+n_slopes_GDT_spec <- GDT_data_processed_after_exclusion |>
+  select(subject, stimulation_GDT, score) |> 
+  pivot_wider(names_from = "stimulation_GDT", values_from = "score") |> 
+  mutate(slope_positive = ifelse((`R-GVS` - `L-GVS` > 0), TRUE, FALSE)) |> 
+  summarize(n = sum(slope_positive))
+
+# Plot the data
+plot_GDT_spec <- GDT_data_processed_generic_effect |> 
+  select(subject, stimulation_GDT, score) |> 
+  filter(stimulation_GDT %in% c("L-GVS", "R-GVS")) |> 
+  ggplot(aes(x = stimulation_GDT, y = score, fill = stimulation_GDT)) +
+  introdataviz::geom_split_violin(aes(group = stimulation_GDT), alpha = .5) +
+  geom_boxplot(aes(group = stimulation_GDT), width = .12, fatten = NULL, alpha = .6) +
+  geom_point(aes(colour = stimulation_GDT), alpha = .6, 
+              position = position_nudge(x = c(-.2, .2))) +
+  geom_line(aes(group = subject), alpha = .2, linewidth = .5, 
+            position = position_nudge(x = c(.2, -.2))) +
+  stat_summary(fun = "median", geom = "point") +
+  stat_summary(fun.data = "median_mad", geom = "errorbar", width = .1) +
+  annotate("text", x=1.5, y=18, size = 3,
+           label = paste0("Positive Slopes / Negative Slopes: ", n_slopes_GDT_spec, " / ",
+                          nrow(GDT_data_processed_generic_effect)/4 - n_slopes_GDT_spec)) +
+  coord_cartesian(ylim = c(-22, 22), expand = FALSE) +
+  stat_summary(fun = "median", geom = "point", size = 2, 
+               colour = "black", position = position_nudge(x = c(.2, -.2))) +
+  stat_summary(group = 1, fun = "median", geom = "line", linewidth = 1.5, 
+               colour = "black", position = position_nudge(x = c(.2, -.2))) +
+  xlab("") +
+  ylab("Net Score") +
+  ggtitle("GDT (Specific Effect)") +
+  theme_classic() +
+  theme(plot.title = element_text(size = 14, face = "bold", 
+                                  hjust = .5, family = "Helvetica"),
+        axis.ticks = element_line(colour = "black", size = 1),
+        axis.text = element_text(face = "bold", size = 10, family = "Helvetica"),
+        axis.title = element_text(face = "bold", size = 12, family = "Helvetica"),
+        legend.position = "none") +
+  scale_fill_viridis(discrete = TRUE, option = "E") +
+  scale_color_viridis(discrete = TRUE, option = "E")
+
+plot_GDT_spec
+
+ggsave("PolaritySpec_eff_GDT.png",
+       plot = plot_GDT_spec,
+       units = "px",
+       width = 1063,
+       dpi = 300, 
+       path = "plots")
+
+
+
+```
+
 # Statistical inference
 
 ## BART 
@@ -198,7 +347,7 @@ This section contains the t-test for the specific vestibular effect and prints o
 
 ```{r}
 # A bit of data wrangling to exclude the SHAM condition
-BART_data_processed_specific_effect_test <- BART_data_processed_after_exclusion |> 
+BART_data_processed_specific_effect_test <- BART_data_processed_after_exclusion |>
   filter(stimulation_BART != "SHAM")
 
 t.test(adjusted_mean_pumps ~ stimulation_BART, data = BART_data_processed_specific_effect_test,
@@ -209,7 +358,7 @@ report()
 
 ### Testing the specific vestibular effect for equivalence 
 
-This section contains the equivalence test for the specific vestibular effect. THE SESOI is set according to the smallest statistically detectable effect size of the original study (critical effect size; Lakens, 2018). While this kind of test does not directly confirm the absence of a meaningful effect, it allows us to reject effect sizes as larger or larger than the critical effect size, thus leading to the conclusion that the effect detected by the original study cannot be as huge as proclaimed.
+This section contains the equivalence test for the specific vestibular effect. THE SESOI is set according to the smallest statistically detectable effect size of the original study (critical effect size; Lakens, 2018). While this kind of test does not directly confirm the absence of a meaningful effect, it allows us to reject effect sizes as large or larger than the critical effect size, thus leading to the conclusion that the effect detected by the original study cannot be as huge as proclaimed.
 
 ```{r}
 # get the critical t value of the original study
@@ -223,11 +372,113 @@ t_TOST(
   data = BART_data_processed_specific_effect_test,
   hypothesis = "EQU",
   paired = TRUE,
+  rm_correction = TRUE,
   eqb = critical_d$d,
   eqbound_type = "SMD",
   alpha = 0.05,
 )
 ```
+
+
+### Explorative statistics
+
+#### Non-parameteric testing (Wilcoxon test)
+
+```{r}
+BART_data_processed_specific_effect_test |> 
+  group_by(stimulation_BART) |> 
+  summarise(Median = round_half_up(median(adjusted_mean_pumps), 2),
+            MAD = round_half_up(mad(adjusted_mean_pumps), 2)) |>
+  kable() |>
+  kable_classic(full_width = FALSE)
+
+
+wilcox.test(adjusted_mean_pumps ~ stimulation_BART, data = BART_data_processed_specific_effect_test,
+       paired = TRUE, alternative = "two.sided")
+
+wilcoxonPairedR(x = BART_data_processed_specific_effect_test$adjusted_mean_pumps, 
+                g = BART_data_processed_specific_effect_test$stimulation_BART)
+
+```
+
+#### Change Over Time (ANOVA)
+
+##### Testing for normality and homoscedasticity
+
+```{r}
+
+test_for_norm <- BART_data_processed_after_exclusion |> 
+  select(subject, adjusted_mean_pumps, session_BART) |> 
+  pivot_wider(names_from = session_BART, values_from = adjusted_mean_pumps) |> 
+  select(-subject) 
+
+# Test for normality
+test_for_norm |> 
+  mardia(std = TRUE)
+
+# Test for homoscedasticity using the Levene test
+leveneTest(adjusted_mean_pumps ~ session_BART, data = BART_data_processed_after_exclusion)
+
+```
+
+##### Model and post-hoc comparisons
+
+```{r}
+
+# Calculate one-way repeated-measure ANOVA
+aov <- anova_test(
+  data = BART_data_processed_after_exclusion, 
+  dv = adjusted_mean_pumps, 
+  wid = subject,
+  within = session_BART
+)
+
+get_anova_table(aov)
+
+pairwise_t_test(
+  data = BART_data_processed_after_exclusion,
+  adjusted_mean_pumps ~ session_BART, 
+  paired = TRUE,
+  p.adjust.method = "BH"
+)
+
+```
+
+#### Independent t-test
+
+```{r}
+# A bit of data wrangling to exclude the SHAM condition
+BART_data_processed_specific_effect_test_block1 <- BART_data_processed_specific_effect_test |> 
+  filter(session_BART == "01")
+
+BART_data_processed_specific_effect_test_block1 |> 
+  group_by(stimulation_BART) |> 
+  summarise(Mean = round_half_up(mean(adjusted_mean_pumps), 2),
+            SD = round_half_up(sd(adjusted_mean_pumps), 2)) |>
+  kable() |>
+  kable_classic(full_width = FALSE)
+
+t.test(adjusted_mean_pumps ~ stimulation_BART, data = BART_data_processed_specific_effect_test_block1,
+       paired = FALSE, alternative = "two.sided") |> 
+report()
+
+```
+
+#### Correlation Analysis
+
+```{r}
+
+data_all <-
+  full_join(BART_data_processed_after_exclusion, GDT_data_processed_after_exclusion, 
+            by = c("subject", "age", "gender"))
+
+cor.test(data_all$adjusted_mean_pumps, data_all$score, 
+         method = "spearman",
+         alternative = "two.sided")
+
+
+```
+
 
 ## GDT
 
@@ -240,8 +491,10 @@ GDT_data_processed_generic_effect_test <- GDT_data_processed_generic_effect |>
   filter(stimulation_GDT != c("L-GVS", "R-GVS")) 
 
 # perform the test
-wilcox.test(score ~ stimulation_GDT, data = GDT_data_processed_generic_effect_test, paired = TRUE,
-       alternative = "two.sided")
+wilcox.test(score ~ stimulation_GDT, data = GDT_data_processed_generic_effect_test, paired = TRUE, alternative = "two.sided")
+
+wilcoxonPairedR(x = GDT_data_processed_generic_effect_test$score, 
+                g = GDT_data_processed_generic_effect_test$stimulation_GDT)
 
 ```
 
@@ -254,8 +507,10 @@ This section performs the Wilcoxon test for paired data for the specific vestibu
 GDT_data_processed_specific_effect_test <- GDT_data_processed_after_exclusion |> 
   filter(stimulation_GDT != "SHAM") 
 
-wilcox.test(score ~ stimulation_GDT, data = GDT_data_processed_specific_effect_test, paired = TRUE,
-       alternative = "two.sided")
+wilcox.test(score ~ stimulation_GDT, data = GDT_data_processed_specific_effect_test, paired = TRUE, alternative = "two.sided")
+
+wilcoxonPairedR(x = GDT_data_processed_specific_effect_test$score, 
+                g = GDT_data_processed_specific_effect_test$stimulation_GDT)
 
 ```
 

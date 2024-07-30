@@ -81,11 +81,11 @@ The following section reads in the demographics data and extracts the important 
 ```{r load demographics}
 
 # reading in the single demographics files from each participant
-demo_files <- list.files(path = "data_test/", recursive = TRUE, pattern = "*demographics*")
+demo_files <- list.files(path = "data/", recursive = TRUE, pattern = "*demographics*")
 
 # while reading in: transform values of the variable frameRate into a characters, because it might not be an integer due to frame drops and block the merging of the tables
-demographics_raw <- map_dfr(.x = set_names(paste0("data_test/", demo_files)),
-                            .f = ~ read_tsv(.x, col_types = cols(.default = "?", frameRate = "c")))
+demographics_raw <- map_dfr(.x = set_names(paste0("data/", demo_files)),
+                            .f = ~ read_tsv(.x, col_types = cols(.default = "?", participant = "c", frameRate = "c")))
 
 ```
 
@@ -96,7 +96,7 @@ demographics_raw <- map_dfr(.x = set_names(paste0("data_test/", demo_files)),
 
 # Select variables age and gender. Filter out empty rows created by PsychoPy at the start and the end of the experiment.
 demographics_clean <- demographics_raw |> 
-  clean_names() |> 
+  janitor::clean_names() |> 
   select(subject = participant, 
          age = text_age_input_text, 
          gender = slider_gender_response) |> 
@@ -122,11 +122,11 @@ This section contains several important processing steps:
 ```{r}
 
 # reading in the .tsv files from each block/session (three per participant) from each participant
-BART_files <- list.files(path = "data_test/", recursive = TRUE, pattern = "*balloonanalogrisktask*")
+BART_files <- list.files(path = "data/", recursive = TRUE, pattern = "*balloonanalogrisktask*")
 
 # while reading in: again taking care of the frameRate variable (see demographics section)
-BART_raw <- map_dfr(.x = set_names(paste0("data_test/", BART_files)),
-                            .f = ~ read_tsv(.x, col_types = cols(.default = "?", frameRate = "c")))
+BART_raw <- map_dfr(.x = set_names(paste0("data/", BART_files)),
+                            .f = ~ read_tsv(.x, col_types = cols(.default = "?", participant = "c", frameRate = "c")))
 ```
 
 
@@ -136,8 +136,8 @@ BART_raw <- map_dfr(.x = set_names(paste0("data_test/", BART_files)),
 
 # Select variables subject, session, n_pumps, popped, and earnings. Filter out empty rows created by PsychoPy at the start and the end of the experimental block. Join it with the conditions table.
 BART_clean_with_conditions <- BART_raw |> 
-  clean_names() |> 
-  select(subject = participant, session, n_pumps, popped, earnings) |> 
+  janitor::clean_names() |> 
+  select(subject = participant, session, n_pumps, popped, earnings, trials_started, trials_stopped) |> 
   filter(!is.na(n_pumps)) |> 
   left_join(condition_table_BART, by = c("subject", "session"))
 
@@ -213,6 +213,17 @@ BART_scored <- BART_clean_with_conditions_and_exclusions_trials |>
 ```
 
 
+## Duration all (BART)
+
+```{r}
+
+BART_duration_all <- BART_clean_with_conditions |> 
+  group_by(subject, stimulation) |> 
+  summarize(duration_all = max(trials_stopped)- min(trials_started))
+
+```
+
+
 ## Merge data (BART)
 
 Merge all important BART dfs with the demographics data and rename/reorder some variables for clarity. Also introduce a master exclusion criterion that consists of all possible exclusion criteria (i.e. if a participant falls under one exclusion criterion, the master exclusion criterion will also indicate exclusion). This is just introduced to facilitate the exclusion of participants in the analyses file.
@@ -220,9 +231,10 @@ Merge all important BART dfs with the demographics data and rename/reorder some 
 ```{r}
 
 # Merge tables; also rearrange the columns a bit and rename some variables for clarity
-BART_all <- full_join(demographics_clean, BART_scored, by = "subject") |>
+BART_all <- full_join(demographics_clean, BART_scored, by = "subject") |> 
   full_join(BART_proportion_exploded_balloons, by = c("subject", "stimulation")) |> 
   full_join(BART_clean_with_conditions_and_exclusions_subject, by = c("subject", "stimulation")) |> 
+  full_join(BART_duration_all, by = c("subject", "stimulation")) |> 
   select("subject", "session", "stimulation", everything()) |> 
   arrange(subject, session) |> 
   rename(session_BART = session,
@@ -251,10 +263,10 @@ This section also contains several important processing steps:
 ```{r}
 
 # same as above
-GDT_files <- list.files(path = "data_test/", recursive = TRUE, pattern = "*gameofdicetask_run*")
+GDT_files <- list.files(path = "data/", recursive = TRUE, pattern = "*gameofdicetask_run*")
 
-GDT_raw <- map_dfr(.x = set_names(paste0("data_test/", GDT_files)),
-                   .f = ~ read_tsv(.x, col_types = cols(.default = "?", frameRate = "c")))
+GDT_raw <- map_dfr(.x = set_names(paste0("data/", GDT_files)),
+                   .f = ~ read_tsv(.x, col_types = cols(.default = "?", participant = "c", frameRate = "c")))
 
 ```
 
@@ -262,12 +274,19 @@ GDT_raw <- map_dfr(.x = set_names(paste0("data_test/", GDT_files)),
 
 Tidy the data and extract the important behavioral variables (choices, gains). Also join the table with the conditions table.
 
+Note (14.04.2024): In the following block, the choice values are adapted to the gain values due to a small glitch in the experiment, which caused some deviation of the choice value from the gain value. 
+
 ```{r}
 
 GDT_clean_with_conditions <- GDT_raw |> 
-  clean_names() |> 
+  janitor::clean_names() |> 
   filter(!is.na(d_number)) |> 
-  select(subject = participant, session, gain, choice) |> 
+  select(subject = participant, session, gain, choice) |>
+  mutate(choice = case_when(gain == -1000 | gain == -1000 ~ 1,
+                            gain == -500 | gain == 500 ~ 2,
+                            gain == -200 | gain == 200 ~ 3,
+                            gain == -100 | gain == 100 ~ 4,
+                            TRUE ~ choice)) |> 
   mutate(choice = recode(choice, `4` = "safest", `3` = "safe", 
                          `2` = "risky", `1` = "riskiest")) |> 
   left_join(condition_table_GDT, by = c("subject", "session")) |> 
@@ -298,7 +317,7 @@ GDT_clean_with_conditions_subject_valid <- GDT_clean_with_conditions |>
 
 ## Number of choices and net score (GDT)
 
-In this section, the number of safe/risky choices per stimulation block and participant is calculated. The additional net score of the GDT is calculated in the following way: Sum of save choices (i.e. safest plus safe option) - sum of risky choices (i.e. risky plus riskiest option). A positive score thus hints at a safe player, while a negative score indicates risky playing.
+In this section, the number of safe/risky choices per stimulation block and participant is calculated. The additional net score of the GDT is calculated in the following way: Sum of risky choices (i.e. riskiest and risky option) - sum of safe choices (i.e. safe plus safest option). A positive score thus hints at a safe player, while a negative score indicates risky playing.
 
 ```{r}
 
@@ -308,7 +327,7 @@ GDT_scored <- GDT_clean_with_conditions |>
   pivot_wider(names_from = "choice", values_from = n) |> 
   select(c("subject", "stimulation", "safest", "safe", "risky", "riskiest")) |> 
   rowwise() |> 
-  mutate(score = sum(safest, safe, na.rm = TRUE) - sum(risky, riskiest, na.rm = TRUE)) |> 
+  mutate(score = sum(riskiest, risky, na.rm = TRUE) - sum(safe, safest, na.rm = TRUE)) |> 
   select("subject", "session", "stimulation", everything())
 
 ```
@@ -337,11 +356,11 @@ GDT_all <- full_join(demographics_clean, GDT_scored, by = "subject") |>
 ```{r}
 
 # in case this dir doesn't exist, create it
-dir.create("data/processed/")
+dir.create("processed/")
 
 # save data to disk in that dir
-write_csv(BART_all, file = "data/processed/BART_data_processed.csv")
-write_csv(GDT_all, file = "data/processed/GDT_data_processed.csv")
+write_csv(BART_all, file = "processed/BART_data_processed.csv")
+write_csv(GDT_all, file = "processed/GDT_data_processed.csv")
 
 ```
 
