@@ -216,9 +216,9 @@ plot_BART_spec
 
 ggsave("PolaritySpec_eff_BART.png",
        plot = plot_BART_spec,
-       units = "px",
-       width = 1063,
-       dpi = 300, 
+       units = "mm",
+       width = 90.01,
+       dpi = 1000, 
        path = "plots")
 
 ```
@@ -312,9 +312,9 @@ plot_GDT_spec
 
 ggsave("PolaritySpec_eff_GDT.png",
        plot = plot_GDT_spec,
-       units = "px",
-       width = 1063,
-       dpi = 300, 
+      units = "mm",
+       width = 90.01,
+       dpi = 1000, 
        path = "plots")
 
 
