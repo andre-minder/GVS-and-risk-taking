@@ -21,5 +21,5 @@ The current folders contain the following information/files:
 - **tasks**: All tasks used in the study (BART and GDT).
 
 Important links:
-- OSF: osf.io/p3brd 
+- OSF (Preregistration): https://osf.io/ufy7j
 - Original study: https://doi.org/10.1016/j.neuropsychologia.2021.107965
