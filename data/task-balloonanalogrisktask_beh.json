@@ -1,0 +1,35 @@
+{
+  "TaskName":"Balloon Analogue Risk Task (BART)",
+  "TaskDescription":"Participants inflated virtual balloons with different (unknown) breaking points to earn points, providing a measure of risk-taking. They performed the task while receiving GVS.",
+  "Instructions":"See OSF: https://osf.io/ufy7j",
+  "InstitutionName":"University of Bern",
+  "InstitutionAddress":"Bern, Switzerland",
+  "SoftwareName":"PsychoPy",
+  "SoftwareVersion":"2023.2.0",
+  "TaskMetadata":{
+    "NumberOfRuns":3,
+    "RewardType":"Points"
+  },
+  "n_pumps":{
+    "Description":"Number of pumps performed on the balloon.",
+    "Units":"count"
+  },
+  "popped":{
+    "Description":"Whether the balloon popped during the trial.",
+    "Levels":{
+      "0":"Did not pop",
+      "1":"Popped"
+    }
+  },
+  "participant":{
+    "Description":"ID of participant"
+  },
+  "session":{
+    "Description":"Number of the experimental block.",
+    "Levels":{
+      "1":"Block 1",
+      "2":"Block 2",
+      "3":"Block 3"
+    }
+  }
+}

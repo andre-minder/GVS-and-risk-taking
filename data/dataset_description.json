@@ -1,0 +1,50 @@
+{
+  "BIDSVersion": "1.10.0",
+  "Name": "data",
+  "DatasetType": "raw",
+  "License": "CC0",
+  "Authors": [
+    "André Minder",
+    "Michaela McAssay",
+    "Matthias Ertl"
+  ],
+  "HowToAcknowledge": "Please cite this dataset using the provided DOI and reference the associated publication.",
+  "Funding": [
+    "No funding"
+  ],
+  "EthicsApprovals": [
+    "This study received ethical approval from the Ethics Commission of the Faculty of Human Sciences, University of Bern (2023-10-00006)."
+  ],
+  "GeneratedBy": [
+    {
+      "Name": "PsychoPy3",
+      "Version": "2023.2.2",
+      "Description": "Behavioral experiment created and run using PsychoPy Builder."
+    },
+    {
+      "Name": "R",
+      "Version": "4.3.2",
+      "Description": "Data conversion"
+    }
+  ],
+  "SourceDatasets": [],
+  "Modality": "behavioral",
+  "TaskDescription": "This dataset includes data from two behavioral tasks: (1) the Balloon Analogue Risk Task (BART) and (2) the Game of Dice Task (GDT). They played each task 3 times (run 1-3 for each task). During each block, galvanic vestibular stimulation with different polarity (L-GVS, R-GVS, sham) was administered to the participants. A break of 5 minutes was set between the blocks.",
+  "Tasks": [
+    {
+      "TaskName": "Balloon Analogue Risk Task (BART)",
+      "Description": "Participants inflated virtual balloons with different (unknown) breaking points to earn points, providing a measure of risk-taking."
+    },
+    {
+      "TaskName": "Game of Dice Task (GDT)",
+      "Description": "Participants selected dice combinations with varying winning probabilities to maximize points, providing a measure of decision-making under risk."
+    }
+  ],
+  "InstitutionName": "University of Bern",
+  "InstitutionAddress": "Fabrikstrasse 8, 3012 Bern, Switzerland",
+  "FundingReferences": "none",
+  "ReferencesAndLinks": [
+    "https://osf.io/ufy7j",
+    "https://osf.io/preprints/psyarxiv/6q2nz_v1"
+  ]
+}

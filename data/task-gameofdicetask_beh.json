@@ -1,0 +1,36 @@
+{
+  "TaskName":"Game of Dice Task (GDT)",
+  "TaskDescription":"Participants bet on outcomes of a virtual die roll with different risk options while receiving GVS.",
+  "Instructions":"See OSF: https://osf.io/ufy7j",
+  "InstitutionName":"University of Bern",
+  "InstitutionAddress":"Bern, Switzerland",
+  "SoftwareName":"PsychoPy",
+  "SoftwareVersion":"2023.2.0",
+  "TaskMetadata":{
+    "NumberOfRuns":3,
+    "RewardType":"Points"
+  },
+  "choice":{
+    "Description":"Denominates which dice combination has been chosen (reaching from safe to risky choices).",
+    "Levels":{
+      "1":"Riskiest",
+      "2":"Risky",
+      "3":"Safe",
+      "4":"Safest"
+    }
+  },
+  "gain":{
+    "Description":"Denominates the loss or gain during each trial"
+  },
+  "participant":{
+    "Description":"ID of participant"
+  },
+  "session":{
+    "Description":"Number of the experimental block.",
+    "Levels":{
+      "1":"Block 1",
+      "2":"Block 2",
+      "3":"Block 3"
+    }
+  }
+}
